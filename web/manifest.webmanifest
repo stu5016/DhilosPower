@@ -1,0 +1,14 @@
+{
+  "name": "DhilosPower 控制",
+  "short_name": "DhilosPower",
+  "description": "DhilosPower 行動電源的非官方藍牙控制工具",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0d09",
+  "theme_color": "#0a0d09",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

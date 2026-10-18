@@ -1,0 +1,17 @@
+# 原廠 App 與反編譯產物不放進 repo（版權屬原廠）
+*.apk
+*.xapk
+*.dex
+jadx-out/
+decompiled/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 編輯器 / 系統
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
