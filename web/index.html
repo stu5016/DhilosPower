@@ -227,6 +227,24 @@ input[type=range]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 
 .field { display: flex; gap: 8px; }
 .field input { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: 14px var(--mono); outline: none; }
 .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.select { position: relative; }
+.select::after { content: ""; position: absolute; right: 16px; top: 50%; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.select select, .param select, .param input {
+  width: 100%; height: 48px; padding: 0 40px 0 14px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; outline: none; -webkit-appearance: none; appearance: none;
+}
+.param input { font: 15px var(--mono); padding-right: 14px; }
+.select select:focus, .param select:focus, .param input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+.param { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; margin-top: 12px; }
+.param label { font-size: 13px; color: var(--muted); }
+.param select { padding-right: 14px; }
+.preview { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+.preview span { flex: none; }
+.preview code { font: 12px/1.5 var(--mono); color: var(--accent); overflow-wrap: anywhere; }
+.result { margin-top: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); font-size: 14px; }
+.result b { font-size: 18px; }
+.result code { display: block; margin-top: 6px; font: 11px/1.5 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.result.bad { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, var(--surface)); }
 .console { font: 12px/1.55 var(--mono); background: var(--surface-2); border-radius: 14px; padding: 10px 12px; height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 12px; }
 .console .tx { color: var(--accent); }
 .console .rx { color: var(--text); }
@@ -374,14 +392,13 @@ footer a { color: inherit; }
       <div class="card">
         <div class="card-h"><h3>充電設定</h3></div>
         <div class="presets">
-          <button class="preset" data-preset="fast"><svg><use href="#i-plane"/></svg><b>出差</b><small>充到 100%<br>低電 10%・5 A</small></button>
-          <button class="preset" data-preset="normal"><svg><use href="#i-bolt"/></svg><b>一般</b><small>充到 80%<br>低電 30%・3 A</small></button>
-          <button class="preset" data-preset="care"><svg><use href="#i-leaf"/></svg><b>保養</b><small>充到 70%<br>低電 40%・1.5 A</small></button>
+          <button class="preset" data-preset="fast"><svg><use href="#i-plane"/></svg><b>出差</b><small>充到 100%<br>充電 5 A</small></button>
+          <button class="preset" data-preset="normal"><svg><use href="#i-bolt"/></svg><b>一般</b><small>充到 80%<br>充電 3 A</small></button>
+          <button class="preset" data-preset="care"><svg><use href="#i-leaf"/></svg><b>保養</b><small>充到 70%<br>充電 1.5 A</small></button>
           <button class="preset" data-preset="custom"><svg><use href="#i-tune"/></svg><b>自訂</b><small id="customSum">自行調整</small></button>
         </div>
         <div id="customBox" class="custom" hidden>
           <div class="slider"><div class="slider-h"><label for="full">充滿電量</label><output id="fullOut" class="num"></output></div><input type="range" id="full" min="90" max="100" step="1" value="100"></div>
-          <div class="slider"><div class="slider-h"><label for="low">低電量通知</label><output id="lowOut" class="num"></output></div><input type="range" id="low" min="10" max="20" step="1" value="10"></div>
           <div class="slider"><div class="slider-h"><label for="amp">充電電流</label><output id="ampOut" class="num"></output></div><input type="range" id="amp" min="0.1" max="5" step="0.1" value="5"></div>
           <button id="btnCustom" class="btn primary block">套用自訂設定</button>
         </div>
@@ -426,9 +443,20 @@ footer a { color: inherit; }
     <section class="panel" data-panel="advanced" hidden>
       <div class="card">
         <div class="card-h"><h3>手動送指令</h3></div>
-        <div class="field"><input type="text" id="raw" placeholder="例：C5 12 34 09" spellcheck="false" autocomplete="off" autocapitalize="characters"><button id="btnRaw" class="btn primary">送出</button></div>
-        <div class="row-actions"><label class="switch"><input type="checkbox" id="autoSum" checked>自動補 00 並計算校驗和</label></div>
-        <p class="hint">「FD」開頭（進入韌體更新模式）的指令會被擋下，不會送出。</p>
+        <div class="select"><select id="cmdSel" aria-label="選擇指令"></select></div>
+        <p id="cmdDesc" class="hint" style="margin-top:8px"></p>
+        <div id="cmdParam" class="param" hidden>
+          <label id="cmdParamLabel" for="cmdParamInput"></label>
+          <select id="cmdParamSel" hidden></select>
+          <input type="text" id="cmdParamInput" spellcheck="false" autocomplete="off" autocapitalize="characters" hidden>
+        </div>
+        <div id="rawBox" hidden>
+          <div class="field" style="margin-top:12px"><input type="text" id="raw" placeholder="例：C5 12 34 09" spellcheck="false" autocomplete="off" autocapitalize="characters"></div>
+          <div class="row-actions"><label class="switch"><input type="checkbox" id="autoSum" checked>自動補 00 並計算校驗和</label></div>
+        </div>
+        <div class="preview"><span>將送出</span><code id="cmdPreview" class="num">--</code></div>
+        <button id="btnRaw" class="btn primary block">送出</button>
+        <div id="cmdResult" class="result" hidden></div>
       </div>
       <div class="card">
         <div class="card-h"><h3>通訊紀錄</h3><button id="btnCopy" class="btn">複製</button><button id="btnClear" class="btn">清除</button></div>
@@ -551,13 +579,15 @@ class MockLink {
         case 0x0B: return [pkt([...h(0x0B), ...w(jitter(20000)), ...w(jitter(2250)), 0, 0, 0, 0])];
         case 0x0C: return [pkt([...h(0x0C), 0, 0, 0, 0, 0, 0, 0, 0])];
         case 0x0D: return [pkt([...h(0x0D), 0, 0, 0, 0])];
+        case 0x0E: return [pkt([...h(0x0E), 0, 0, 0, 0, 0, 0, 0, 0])];
         case 0x04: return [pkt([...h(0x04), 45, 18])];
         case 0x1F: return [pkt([...h(0x1F), ...[0, 1, 2, 3].flatMap(i => w(g * 4 + i > 12 ? 0 : 20 + ((g * 4 + i) * 7) % 30))])];
         case 0x20: return [pkt([...h(0x20), ...[0, 1, 2, 3].flatMap(i => w(g * 4 + i > 12 ? 0 : 70 + ((g * 4 + i) * 5) % 30))])];
       }
     }
     if (d[0] === 0xC5) {
-      const vals = { 0x0D: 76, 0x12: 230, 0x13: 65535, 0x17: 112, 0x18: 20000, 0x4F: 93, 0x09: 15800, 0x0A: 0x10000 - 2300 };
+      const vals = { 0x08: 3002, 0x09: 15800, 0x0A: 0x10000 - 2300, 0x0B: 0x10000 - 2150, 0x0D: 76, 0x0E: 74, 0x0F: 14800, 0x10: 19500,
+        0x11: 240, 0x12: 230, 0x13: 65535, 0x14: 5000, 0x15: 16800, 0x16: 0x00C0, 0x17: 112, 0x18: 20000, 0x19: 14400, 0x1C: 1234, 0x4F: 93 };
       const v = vals[d[3]] ?? 0;
       return [pkt([...h(0x25), v & 0xFF, v >> 8])];
     }
@@ -568,6 +598,7 @@ class MockLink {
     }
     if (d[0] === 0xF2) return [pkt([...h(0x70), 0x30])];
     if (d[0] === 0xC6) return [pkt(h(0x22))];
+    if (d[0] === 0xC7) return [0, 1, 2, 3, 4].map(i => pkt([...h(0x23), i, 0x5A, 0x10 + i, 0x22]));
     return [];
   }
 }
@@ -588,7 +619,7 @@ class Device {
     if (p.expect === null || d[0] === p.expect) {
       p.packets.push(d);
       if (!p.multi && p.expect !== null) this.finish();
-      else { clearTimeout(p.idle); p.idle = setTimeout(() => this.finish(), 350); }
+      else { clearTimeout(p.idle); p.idle = setTimeout(() => this.finish(), p.idleMs || 350); }
     }
   }
   finish() {
@@ -601,7 +632,7 @@ class Device {
   send(cmd) {
     const run = () => new Promise((resolve, reject) => {
       const p = { ...cmd, packets: [], resolve };
-      p.timer = setTimeout(() => this.finish(), cmd.expect === null ? (cmd.wait || 400) : (cmd.multi ? 2500 : 1500));
+      p.timer = setTimeout(() => this.finish(), cmd.timeout || (cmd.expect === null ? (cmd.wait || 400) : (cmd.multi ? 2500 : 1500)));
       this.pending = p;
       log('tx', cmd.tx, cmd.label || '');
       this.link.write(cmd.tx).catch(err => {
@@ -922,22 +953,21 @@ function onRange() {
   const v = +$('#dcv').value, a = +$('#dca').value;
   $('#dcvBig').textContent = v.toFixed(1);
   $('#dcw').textContent = `${(v * a).toFixed(0)} W`;
-  $('#customSum').innerHTML = `充到 ${$('#full').value}%<br>低電 ${$('#low').value}%・${(+$('#amp').value).toFixed(1)} A`;
+  $('#customSum').innerHTML = `充到 ${$('#full').value}%<br>充電 ${(+$('#amp').value).toFixed(1)} A`;
 }
 const custom = store.get('custom', null);
-if (custom) { $('#full').value = custom.full; $('#low').value = custom.low; $('#amp').value = custom.amp; }
+if (custom) { $('#full').value = custom.full; $('#amp').value = custom.amp; }
 const dcSaved = store.get('dc', null);
 if (dcSaved) { $('#dcv').value = dcSaved.v; $('#dca').value = dcSaved.a; }
 bind('full', v => v + '%');
-bind('low', v => v + '%');
 bind('amp', v => v.toFixed(1) + ' A');
 bind('dca', v => v.toFixed(1) + ' A');
 bind('dcv', v => v.toFixed(1) + ' V');
 
 $('#btnCustom').onclick = async () => {
-  const c = { full: +$('#full').value, low: +$('#low').value, amp: +(+$('#amp').value).toFixed(1) };
-  // 原 App 的自訂滑桿送出時 mode 欄位固定為 0
-  if (await sendWrite(C.charge(c.full, c.low, 0, c.amp), '已套用自訂充電設定')) { store.set('custom', c); store.set('preset', 'custom'); }
+  const c = { full: +$('#full').value, amp: +(+$('#amp').value).toFixed(1) };
+  // F4 的 byte4（App 標為「低電量通知」）固定送 10%，與原 App 自訂模式的預設值相同；mode 欄位原 App 自訂時固定為 0
+  if (await sendWrite(C.charge(c.full, 10, 0, c.amp), '已套用自訂充電設定')) { store.set('custom', c); store.set('preset', 'custom'); }
 };
 
 $$('[data-step]').forEach(b => b.onclick = () => {
@@ -962,25 +992,184 @@ $('#btnDC').onclick = async () => {
   } catch (e) { log('err', e.message || e); toast('送出失敗'); }
 };
 
-// ---------- 進階 ----------
+// ---------- 進階：指令選單 ----------
+const sx16 = v => v & 0x8000 ? v - 0x10000 : v;
+const V = v => `${(v / 1000).toFixed(3)} V`;
+const A = v => `${(sx16(v) / 1000).toFixed(3)} A`;
+const VA = (d, i) => `${(Math.abs(s16(d, i)) / 1000).toFixed(2)} V・${(Math.abs(s16(d, i + 2)) / 1000).toFixed(2)} A`;
+// [暫存器, 名稱, 格式化, App 有用到]
+const SBS_REGS = [
+  [0x08, '電池溫度 Temperature', v => `${(v * 0.1 - 273.15).toFixed(1)} °C`],
+  [0x09, '電池電壓 Voltage', V],
+  [0x0A, '電流 Current', A],
+  [0x0B, '平均電流 AverageCurrent', A],
+  [0x0D, '剩餘電量 RelativeStateOfCharge', v => `${v & 0xFF} %`, true],
+  [0x0E, '絕對電量 AbsoluteStateOfCharge', v => `${v & 0xFF} %`],
+  [0x0F, '剩餘容量 RemainingCapacity', v => `${v} mAh`],
+  [0x10, '滿充容量 FullChargeCapacity', v => `${v} mAh`],
+  [0x11, '即時可用時間 RunTimeToEmpty', minutes],
+  [0x12, '平均可用時間 AverageTimeToEmpty', minutes, true],
+  [0x13, '充滿所需時間 AverageTimeToFull', minutes, true],
+  [0x14, '要求充電電流 ChargingCurrent', v => `${v} mA`],
+  [0x15, '要求充電電壓 ChargingVoltage', V],
+  [0x16, '電池狀態旗標 BatteryStatus', v => '0x' + v.toString(16).padStart(4, '0').toUpperCase()],
+  [0x17, '充放電次數 CycleCount', v => `${v} 次`, true],
+  [0x18, '設計容量 DesignCapacity', v => `${v} mAh`, true],
+  [0x19, '設計電壓 DesignVoltage', V],
+  [0x1C, '序號 SerialNumber', v => String(v)],
+  [0x4F, '健康度 StateOfHealth', v => `${v & 0xFF} %`, true],
+];
+const GROUPS = [['0', '今天～前 3 天'], ['1', '前 4～7 天'], ['2', '前 8～11 天'], ['3', '前 12～15 天']];
+const hexParam = (txt, len, name) => {
+  const t = (txt || '').replace(/0x/i, '').replace(/\s/g, '');
+  if (!new RegExp(`^[0-9a-f]{1,${len}}$`, 'i').test(t)) throw new Error(`${name}請輸入 1～${len} 位十六進位`);
+  return parseInt(t, 16);
+};
+const one = f => pk => pk.length ? f(pk[0]) : null;
+const histDecode = pk => pk.length ? { main: [3, 5, 7, 9].map(i => `${u16(pk[0], i)}%`).join('・'), detail: '依序為該組的第 1～4 天，0 代表沒有紀錄' } : null;
+const sbsDecode = (reg, fmt) => one(d => ({ main: fmt(le16(d, 3)), detail: `原始值 ${le16(d, 3)}（0x${le16(d, 3).toString(16).toUpperCase()}）` }));
+const macDecode = extra => pk => pk.length ? {
+  main: (extra && extra(pk)) || `收到 ${pk.length} 包`,
+  detail: pk.map(p => `seq ${u16(p, 11)}：${hex(p.slice(3, 11))}`).join('\n'),
+} : null;
+
+const MENU = [
+  ['裝置狀態', [
+    { id: 'ver', name: '版本 / 型號', code: 'F6-01', build: () => C.read(0x01, '版本'),
+      decode: one(d => ({ main: `韌體 v${u16(d, 5)}・${modelName(d[9])}`, detail: `型號碼 ${d[9]}` })) },
+    { id: 'ports', name: '埠開關狀態', code: 'F6-0F', build: () => C.read(0x0F, '埠狀態'),
+      decode: one(d => {
+        const f = parseFlags(d);
+        const on = [f.usb && 'USB-A 輸出', f.c1in && 'Type-C1 輸入', f.c1out && 'Type-C1 輸出', f.c2out && 'Type-C2 輸出', f.dc && 'DC 輸出'].filter(Boolean);
+        return { main: on.length ? on.join('、') : '全部閒置', detail: `b4=${d[4].toString(2).padStart(8, '0')}  b5=${d[5].toString(2).padStart(8, '0')}` };
+      }) },
+    { id: 'usb', name: 'USB-A 與電路板溫度', code: 'F6-0A', build: () => C.read(0x0A, 'USB-A'),
+      decode: one(d => ({ main: `${(u16(d, 3) / 1000).toFixed(2)} V・${(u16(d, 5) / 1000).toFixed(2)} A`, detail: `電路板 ${(u16(d, 9) / 1000).toFixed(1)} °C` })) },
+    { id: 'typec', name: 'Type-C', code: 'F6-0B', build: () => C.read(0x0B, 'Type-C'),
+      decode: one(d => ({ main: `C1：${VA(d, 3)}`, detail: `C2：${VA(d, 7)}` })) },
+    { id: 'dcout', name: 'DC 輸出', code: 'F6-0C', build: () => C.read(0x0C, 'DC 輸出'),
+      decode: one(d => ({ main: `b7–b10：${VA(d, 7)}`, detail: `b3–b6：${VA(d, 3)}（99C2 看 b7–b10，150C 看 b3–b6）` })) },
+    { id: 'dcin', name: 'DC 輸入（150C）', code: 'F6-0D', build: () => C.read(0x0D, 'DC 輸入'),
+      decode: one(d => ({ main: VA(d, 3) })) },
+    { id: 'dc0e', name: 'DC 電壓電流（App 未使用）', code: 'F6-0E', desc: 'App 有定義這條指令但沒有用，欄位意義未知。', build: () => C.read(0x0E, 'F6-0E'),
+      decode: one(d => ({ main: [3, 5, 7, 9].map(i => u16(d, i)).join('・'), detail: '以 uint16 顯示 b3–b10' })) },
+    { id: 'pcbhist', name: '電路板歷史溫度', code: 'F6-04', build: () => C.read(0x04, '電路板歷史溫度'),
+      decode: one(d => ({ main: `最高 ${d[3]} °C・最低 ${d[4]} °C` })) },
+  ]],
+  ['歷史容量', [
+    { id: 'hmin', name: '每日最低電量', code: 'F6-1F', param: { label: '日期範圍', options: GROUPS },
+      build: g => C.read(0x1F, `歷史最低 g=${g}`, +g), decode: histDecode },
+    { id: 'hmax', name: '每日最高電量', code: 'F6-20', param: { label: '日期範圍', options: GROUPS },
+      build: g => C.read(0x20, `歷史最高 g=${g}`, +g), decode: histDecode },
+  ]],
+  ['電池電量計（SBS 暫存器）', [
+    ...SBS_REGS.map(([reg, name, fmt, used]) => ({
+      id: 'sbs-' + reg.toString(16), name, code: 'C5-' + reg.toString(16).padStart(2, '0').toUpperCase(),
+      desc: used ? '原 App 有使用。' : '標準 SBS 暫存器，原 App 沒用到，需實機確認韌體是否回應。',
+      build: () => C.sbs(reg, name), decode: sbsDecode(reg, fmt),
+    })),
+    { id: 'sbs-x', name: '自訂暫存器…', code: 'C5-??', desc: '讀取任意 SBS 暫存器，回應以 Little-Endian uint16 顯示。',
+      param: { label: '暫存器 (hex)', hex: 2, def: '09' },
+      build: p => { const r = hexParam(p, 2, '暫存器'); return C.sbs(r, `SBS 0x${r.toString(16)}`); },
+      decode: one(d => ({ main: `${le16(d, 3)}`, detail: `0x${le16(d, 3).toString(16).toUpperCase().padStart(4, '0')}` })) },
+  ]],
+  ['電量計區塊（MAC）', [
+    { id: 'mac-72', name: 'DAStatus2（電池溫度）', code: 'C4-0072', build: () => C.mac(0x0072, 'DAStatus2'),
+      decode: macDecode(pk => { const p = pk.find(x => u16(x, 11) === 0); return p ? `電池溫度 ${(u16(p, 5) * 0.1 - 273.15).toFixed(1)} °C` : ''; }) },
+    { id: 'mac-60', name: 'LifetimeDataBlock1（歷史溫度）', code: 'C4-0060', build: () => C.mac(0x0060, 'LifetimeData1'),
+      decode: macDecode(pk => { const p = pk.find(x => u16(x, 11) === 3); return p ? `電池歷史最高 ${s8(p[6])} °C・最低 ${s8(p[7])} °C` : ''; }) },
+    { id: 'mac-x', name: '自訂子指令…', code: 'C4-????', desc: '送任意 bq40z MAC 子指令，回應分包原樣顯示。',
+      param: { label: '子指令 (hex)', hex: 4, def: '0072' },
+      build: p => { const c = hexParam(p, 4, '子指令'); return C.mac(c, `MAC 0x${c.toString(16)}`); }, decode: macDecode() },
+  ]],
+  ['記錄', [
+    { id: 'logon', name: '開啟 log', code: 'C6', build: () => ({ tx: pkt([0xC6, 0x12, 0x34, 0xAA, 0xAA]), expect: 0x22, label: '開啟 log' }),
+      decode: one(() => ({ main: 'log 已開啟' })) },
+    { id: 'logread', name: '讀取歷史 log', code: 'C7', desc: '裝置會連續回傳多包 23 開頭的資料，內容格式未知，原樣顯示。',
+      build: () => ({ tx: pkt([0xC7, 0x12, 0x34]), expect: 0x23, multi: true, idleMs: 1000, timeout: 4000, label: '讀取 log' }),
+      decode: pk => pk.length ? { main: `收到 ${pk.length} 包`, detail: pk.map(p => hex(p.slice(3, 15))).join('\n') } : null },
+  ]],
+  ['其他', [
+    { id: 'raw', name: '自訂 hex…', code: 'RAW', desc: '直接輸入封包內容，會顯示期間收到的所有回應。', raw: true,
+      build: () => {
+        const txt = $('#raw').value.replace(/0x/gi, '').replace(/[^0-9a-f]/gi, '');
+        if (!txt || txt.length % 2) throw new Error('請輸入偶數個十六進位字元');
+        const bytes = txt.match(/../g).map(h => parseInt(h, 16));
+        if (bytes[0] === 0xFD) throw new Error('不支援 FD 指令');
+        if ($('#autoSum').checked) {
+          if (bytes.length > 15) throw new Error('自動校驗模式最多 15 bytes');
+          return { tx: pkt(bytes), expect: null, wait: 800, label: '手動' };
+        }
+        if (bytes.length !== 16) throw new Error('關閉自動校驗時必須剛好 16 bytes');
+        return { tx: new Uint8Array(bytes), expect: null, wait: 800, label: '手動' };
+      },
+      decode: pk => pk.length ? { main: `收到 ${pk.length} 包`, detail: pk.map(p => describe(p) || `回應 ${p[0].toString(16).toUpperCase()}`).join('\n') } : null },
+  ]],
+];
+const ITEMS = new Map(MENU.flatMap(([, items]) => items.map(it => [it.id, it])));
+
+const cmdSel = $('#cmdSel');
+cmdSel.innerHTML = MENU.map(([g, items]) => `<optgroup label="${g}">` +
+  items.map(it => `<option value="${it.id}">${it.name}　${it.code}</option>`).join('') + '</optgroup>').join('');
+const curItem = () => ITEMS.get(cmdSel.value);
+const paramValue = () => {
+  const it = curItem();
+  if (!it.param) return undefined;
+  return it.param.options ? $('#cmdParamSel').value : $('#cmdParamInput').value;
+};
+function onCmdChange() {
+  const it = curItem();
+  store.set('cmd', it.id);
+  $('#cmdDesc').textContent = it.desc || '';
+  $('#cmdDesc').hidden = !it.desc;
+  $('#rawBox').hidden = !it.raw;
+  const p = it.param;
+  $('#cmdParam').hidden = !p;
+  if (p) {
+    $('#cmdParamLabel').textContent = p.label;
+    $('#cmdParamSel').hidden = !p.options;
+    $('#cmdParamInput').hidden = !!p.options;
+    if (p.options) $('#cmdParamSel').innerHTML = p.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+    else { $('#cmdParamInput').value = p.def || ''; $('#cmdParamInput').maxLength = p.hex; }
+  }
+  $('#cmdResult').hidden = true;
+  updatePreview();
+}
+function updatePreview() {
+  const el = $('#cmdPreview');
+  try {
+    el.textContent = hex(curItem().build(paramValue()).tx);
+    el.style.color = '';
+  } catch (e) { el.textContent = e.message; el.style.color = 'var(--warn)'; }
+}
+function showResult(r, pk) {
+  const box = $('#cmdResult');
+  box.hidden = false;
+  box.classList.toggle('bad', !r);
+  box.innerHTML = '';
+  const b = document.createElement('b');
+  b.textContent = r ? r.main : '沒有收到回應（逾時）';
+  box.append(b);
+  if (r && r.detail) { const dv = document.createElement('div'); dv.style.whiteSpace = 'pre-line'; dv.style.marginTop = '4px'; dv.textContent = r.detail; box.append(dv); }
+  if (pk.length) { const c = document.createElement('code'); c.textContent = pk.map(hex).join('\n'); c.style.whiteSpace = 'pre-line'; box.append(c); }
+}
+cmdSel.onchange = onCmdChange;
+['#cmdParamSel', '#cmdParamInput', '#raw', '#autoSum'].forEach(s => { $(s).addEventListener('input', updatePreview); $(s).addEventListener('change', updatePreview); });
+if (ITEMS.has(store.get('cmd', ''))) cmdSel.value = store.get('cmd', '');
+onCmdChange();
+
 $('#btnRaw').onclick = async () => {
   if (!dev) return;
-  const txt = $('#raw').value.replace(/0x/gi, '').replace(/[^0-9a-f]/gi, '');
-  if (!txt || txt.length % 2) { toast('請輸入偶數個十六進位字元'); return; }
-  const bytes = txt.match(/../g).map(h => parseInt(h, 16));
-  let d;
-  if ($('#autoSum').checked) {
-    if (bytes.length > 15) { toast('自動校驗模式最多 15 bytes'); return; }
-    d = pkt(bytes);
-  } else {
-    if (bytes.length !== 16) { toast('關閉自動校驗時必須剛好 16 bytes'); return; }
-    d = new Uint8Array(bytes);
-  }
-  if (d[0] === 0xFD) { toast('已擋下 FD（進入韌體更新模式），這個工具不送這條指令'); return; }
-  try { await dev.send({ tx: d, expect: null, wait: 800, label: '手動' }); }
-  catch (e) { log('err', e.message || e); }
+  const it = curItem();
+  let cmd;
+  try { cmd = it.build(paramValue()); } catch (e) { toast(e.message); return; }
+  const btn = $('#btnRaw');
+  btn.disabled = true;
+  try { const pk = await dev.send(cmd); showResult(it.decode(pk), pk); }
+  catch (e) { log('err', e.message || e); toast('送出失敗：' + (e.message || e)); }
+  finally { btn.disabled = false; }
 };
-$('#raw').onkeydown = e => { if (e.key === 'Enter') $('#btnRaw').click(); };
+['#raw', '#cmdParamInput'].forEach(s => $(s).onkeydown = e => { if (e.key === 'Enter') $('#btnRaw').click(); });
 $('#btnClear').onclick = () => { $('#log').textContent = ''; };
 $('#btnCopy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#log').innerText); toast('已複製'); }
