@@ -1,5 +1,6 @@
 # 原廠 App 與反編譯產物不放進 repo（版權屬原廠）
 *.apk
+!release/DhilosControl-*.apk
 *.xapk
 *.dex
 jadx-out/
@@ -15,3 +16,8 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Android 建置產物與簽章金鑰
+android/build/
+*.keystore
+*.jks

@@ -264,6 +264,15 @@ input[type=range]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 
 .sheet .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .sheet .warn-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); margin-bottom: 12px; }
 .sheet .warn-ic svg { width: 22px; height: 22px; }
+.sheet-ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 12px; background: var(--accent-soft); color: var(--accent); }
+.sheet-ic svg { width: 24px; height: 24px; }
+.sheet-ic.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+.sheet-ic.pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--glow); } 50% { box-shadow: 0 0 0 10px transparent; } }
+.wait { display: flex; align-items: center; gap: 10px; margin: -6px 0 18px; font-size: 13px; color: var(--muted); }
+.wait .meter { flex: 1; margin: 0; }
+.wait .meter i { transition: width 1s linear; }
+.sheet .acts.one { grid-template-columns: 1fr; }
 
 .toast { position: fixed; z-index: 50; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -311,6 +320,8 @@ footer a { color: inherit; }
     <symbol id="i-tune" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4v16M12 4v16M18 4v16"/><circle cx="6" cy="9" r="2" fill="currentColor"/><circle cx="12" cy="15" r="2" fill="currentColor"/><circle cx="18" cy="8" r="2" fill="currentColor"/></g></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 12h12"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 12h12M12 6v12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-press" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="4" fill="currentColor"/></g></symbol>
     <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19Z"/><path d="M12 10v4M12 17h.01"/></g></symbol>
   </defs>
 </svg>
@@ -415,7 +426,7 @@ footer a { color: inherit; }
         <div class="slider"><div class="slider-h"><label for="dca">電流上限</label><output id="dcaOut" class="num"></output></div><input type="range" id="dca" min="4" max="10" step="0.5" value="4"></div>
         <div class="dc-meta"><span class="chip">最大功率<b id="dcw" class="num">48 W</b></span></div>
         <button id="btnDC" class="btn primary block">設定 DC 輸出</button>
-        <p class="hint">送出前請拔掉 DC 輸出上的設備，或確認它能承受這個電壓。</p>
+        <p class="hint">送出後要在 60 秒內按一下行動電源上的按鈕確認才會套用。送出前請拔掉 DC 輸出上的設備，或確認它能承受這個電壓。</p>
       </div>
     </section>
 
@@ -501,7 +512,8 @@ const C = {
   },
   dc: (v, a) => {
     const vi = Math.round(v * 1000), ai = Math.round(a * 1000);
-    return { tx: pkt([0xF2, 0x12, 0x34, vi >> 8, vi & 0xFF, ai >> 8, ai & 0xFF, 1]), expect: 0x70, label: `DC ${v}V ${a}A` };
+    // 回應 70 要等使用者按裝置按鈕後才會來，由 waitFor(0x70) 另外等待
+    return { tx: pkt([0xF2, 0x12, 0x34, vi >> 8, vi & 0xFF, ai >> 8, ai & 0xFF, 1]), expect: null, wait: 300, label: `DC ${v}V ${a}A` };
   },
 };
 
@@ -557,6 +569,67 @@ class BleLink {
   disconnect() { if (this.dev && this.dev.gatt.connected) this.dev.gatt.disconnect(); }
 }
 
+// Android App 內的 WebView 不支援 Web Bluetooth，改由 App 注入的 window.DhilosNative 代辦；
+// 原生端用 window.dhilosNativeEvent(JSON 字串) 回報事件
+let nativeLink = null;
+window.dhilosNativeEvent = json => { if (nativeLink) nativeLink.event(JSON.parse(json)); };
+class NativeLink {
+  constructor() { this.seq = 0; this.writes = new Map(); this.pendingConnect = null; }
+  connect() {
+    nativeLink = this;
+    return new Promise((resolve, reject) => {
+      this.pendingConnect = { resolve, reject };
+      window.DhilosNative.connect();
+    });
+  }
+  write(d) {
+    const id = String(++this.seq);
+    return new Promise((resolve, reject) => {
+      this.writes.set(id, { resolve, reject });
+      window.DhilosNative.write(id, Array.from(d, b => b.toString(16).padStart(2, '0')).join('').toUpperCase());
+    });
+  }
+  disconnect() { window.DhilosNative.disconnect(); }
+  event(e) {
+    const c = this.pendingConnect;
+    switch (e.type) {
+      case 'connected':
+        this.pendingConnect = null;
+        if (c) c.resolve(e.name || 'Dhilos');
+        break;
+      case 'cancelled':
+        this.pendingConnect = null;
+        if (nativeLink === this) nativeLink = null;
+        if (c) c.reject(Object.assign(new Error('已取消'), { name: 'NotFoundError' }));
+        break;
+      case 'error':
+        this.pendingConnect = null;
+        if (c && nativeLink === this) nativeLink = null;
+        if (c) c.reject(new Error(e.message || '連線失敗'));
+        else log('err', e.message || '藍牙錯誤');
+        break;
+      case 'packet':
+        if (this.onPacket) this.onPacket(new Uint8Array((String(e.hex).replace(/\s/g, '').match(/../g) || []).map(h => parseInt(h, 16))));
+        break;
+      case 'writeDone': {
+        const w = this.writes.get(e.id);
+        if (!w) break;
+        this.writes.delete(e.id);
+        if (e.ok) w.resolve(); else w.reject(new Error(e.message || '寫入失敗'));
+        break;
+      }
+      case 'disconnected':
+        this.pendingConnect = null;
+        if (c) c.reject(new Error('連線中斷'));
+        for (const w of this.writes.values()) w.reject(new Error('已斷線'));
+        this.writes.clear();
+        if (nativeLink === this) nativeLink = null;
+        if (this.onDisconnect) this.onDisconnect();
+        break;
+    }
+  }
+}
+
 // 示範模式：模擬裝置回應，只用來看畫面與測試解析
 class MockLink {
   constructor() { this.model = 1; }
@@ -564,6 +637,12 @@ class MockLink {
   disconnect() { setTimeout(() => this.onDisconnect && this.onDisconnect(), 10); }
   async write(d) {
     if (sum(d) !== d[15]) return;
+    if (d[0] === 0xF2) {
+      // 模擬 2.5 秒後使用者按下按鈕；超過 20 V 模擬轉接頭不符
+      const v = ((d[3] << 8) | d[4]) / 1000;
+      setTimeout(() => this.onPacket(pkt([0x70, 0x12, 0x34, v <= 20 ? 0x30 : 0x31])), 2500);
+      return;
+    }
     this.respond(d).forEach((p, i) => setTimeout(() => this.onPacket(p), 40 + i * 30));
   }
   respond(d) {
@@ -596,7 +675,6 @@ class MockLink {
       if (cmd === 0x0072) return [pkt([...h(0x21), 0, 0, ...w(3002), 0, 0, 0, 0, 0, 0]), pkt([...h(0x21), 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])];
       if (cmd === 0x0060) return [0, 1, 2, 3].map(s => pkt([...h(0x21), 0, 0, 0, s === 3 ? 48 : 0, s === 3 ? 12 : 0, 0, 0, 0, 0, s]));
     }
-    if (d[0] === 0xF2) return [pkt([...h(0x70), 0x30])];
     if (d[0] === 0xC6) return [pkt(h(0x22))];
     if (d[0] === 0xC7) return [0, 1, 2, 3, 4].map(i => pkt([...h(0x23), i, 0x5A, 0x10 + i, 0x22]));
     return [];
@@ -609,18 +687,40 @@ class Device {
     this.link = link;
     this.chain = Promise.resolve();
     this.pending = null;
+    this.waiters = new Set();
     link.onPacket = d => this.rx(d);
   }
   rx(d) {
     const ok = d.length === 16 && sum(d) === d[15];
     log('rx', d, ok ? describe(d) : '校驗和錯誤，忽略');
+    if (!ok) return;
+    let claimed = false;
+    for (const w of this.waiters) {
+      if (d[0] === w.type) { this.waiters.delete(w); clearTimeout(w.timer); w.resolve(d); claimed = true; }
+    }
     const p = this.pending;
-    if (!ok || !p) return;
-    if (p.expect === null || d[0] === p.expect) {
+    if (p && (p.expect === null || d[0] === p.expect)) {
+      claimed = true;
       p.packets.push(d);
       if (!p.multi && p.expect !== null) this.finish();
       else { clearTimeout(p.idle); p.idle = setTimeout(() => this.finish(), p.idleMs || 350); }
     }
+    if (!claimed && this.onStray) this.onStray(d);
+  }
+  // 等某種回應，不佔用指令佇列（例如 DC 設定要等使用者按裝置按鈕）。
+  // promise 結果：收到的封包；null = 逾時；undefined = 取消；false = 斷線
+  waitFor(type, ms) {
+    let w;
+    const promise = new Promise(resolve => {
+      w = { type, resolve };
+      w.timer = setTimeout(() => { this.waiters.delete(w); resolve(null); }, ms);
+      this.waiters.add(w);
+    });
+    return { promise, cancel: () => { if (this.waiters.delete(w)) { clearTimeout(w.timer); w.resolve(undefined); } } };
+  }
+  abort() {
+    for (const w of this.waiters) { clearTimeout(w.timer); w.resolve(false); }
+    this.waiters.clear();
   }
   finish() {
     const p = this.pending;
@@ -886,6 +986,7 @@ function setConnected(name) {
 }
 function onDisconnected() {
   const was = !!dev;
+  if (dev) dev.abort();
   dev = null; link = null; busy = false;
   clearInterval(autoTimer); $('#auto').checked = false;
   setConnected(null);
@@ -894,11 +995,12 @@ function onDisconnected() {
 }
 async function connect(useMock) {
   try {
-    link = useMock ? new MockLink() : new BleLink();
+    link = useMock ? new MockLink() : window.DhilosNative ? new NativeLink() : new BleLink();
     link.onDisconnect = onDisconnected;
     $('#devName').textContent = '連線中…';
     const name = await link.connect();
     dev = new Device(link);
+    dev.onStray = onStray;
     setConnected(name);
     showTab(store.get('tab', 'status'));
     readStatus();
@@ -983,14 +1085,90 @@ $('#btnDC').onclick = async () => {
     body: `電流上限 ${a.toFixed(1)} A，最大 ${(v * a).toFixed(0)} W。\n請先確認 DC 輸出上的設備能承受這個電壓。`,
     ok: '確定設定', danger: true,
   });
-  if (!okd) return;
-  try {
-    const r = await dev.send(C.dc(v, a));
-    if (!r.length) toast('沒有收到回應，請重新讀取確認');
-    else if (r[0][3] === 0x30) { toast(`DC 輸出已設為 ${v.toFixed(1)} V`); store.set('dc', { v, a }); }
-    else toast('裝置回報設定失敗');
-  } catch (e) { log('err', e.message || e); toast('送出失敗'); }
+  if (!okd || !dev) return;
+  runDC(v, a);
 };
+
+// DC 設定：送出 F2 後裝置要等使用者按按鈕，才回傳 70（byte3 = 0x30 成功）
+const DC_WAIT_SEC = 60;
+let dcRequest = null;
+async function runDC(v, a) {
+  const bg = document.createElement('div');
+  bg.className = 'sheet-bg';
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-live="polite">
+    <div class="sheet-ic"><svg><use href="#i-press"/></svg></div><h4></h4><p></p>
+    <div class="wait" hidden><div class="meter"><i style="width:100%"></i></div><span class="num"></span></div>
+    <div class="acts one"><button class="btn"></button></div></div>`;
+  document.body.appendChild(bg);
+  const ic = bg.querySelector('.sheet-ic'), icUse = ic.querySelector('use');
+  const h4 = bg.querySelector('h4'), p = bg.querySelector('p'), btn = bg.querySelector('.btn');
+  const wait = bg.querySelector('.wait'), bar = wait.querySelector('i'), secs = wait.querySelector('span');
+  let tick = null, waiter = null;
+  const close = () => { clearInterval(tick); bg.remove(); };
+  const show = ({ icon, warn = false, pulse = false, title, body, button, primary = false, waiting = false }) => {
+    icUse.setAttribute('href', '#' + icon);
+    ic.classList.toggle('warn', warn);
+    ic.classList.toggle('pulse', pulse);
+    h4.textContent = title; p.textContent = body;
+    btn.textContent = button; btn.classList.toggle('primary', primary);
+    wait.hidden = !waiting;
+  };
+  const done = opts => { clearInterval(tick); show({ ...opts, primary: true }); btn.onclick = close; btn.focus(); };
+
+  show({ icon: 'i-press', pulse: true, title: '傳送設定中…', body: '', button: '取消' });
+  btn.onclick = () => { if (waiter) waiter.cancel(); };
+
+  waiter = dev.waitFor(0x70, DC_WAIT_SEC * 1000);
+  dcRequest = { v, a };
+  try {
+    await dev.send(C.dc(v, a));
+  } catch (e) {
+    waiter.cancel(); dcRequest = null;
+    log('err', e.message || e);
+    done({ icon: 'i-warn', warn: true, title: '送出失敗', body: String(e.message || e), button: '確定' });
+    return;
+  }
+
+  show({
+    icon: 'i-press', pulse: true, waiting: true, button: '取消',
+    title: '請按一下行動電源上的按鈕',
+    body: `按下後 DC 輸出會設為 ${v.toFixed(1)} V（電流上限 ${a.toFixed(1)} A）。\n如果電壓不對，請按「取消」，並且不要按裝置上的按鈕。`,
+  });
+  const t0 = Date.now();
+  const paint = () => {
+    const left = Math.max(0, DC_WAIT_SEC - (Date.now() - t0) / 1000);
+    bar.style.width = (left / DC_WAIT_SEC * 100) + '%';
+    secs.textContent = `${Math.ceil(left)} 秒`;
+  };
+  paint(); tick = setInterval(paint, 1000);
+
+  const r = await waiter.promise;
+  dcRequest = null;
+  if (r === undefined) {
+    close();
+    toast('已取消等待。之後若按下按鈕，裝置仍可能套用設定');
+    dcRequest = { v, a, late: true };
+  } else if (r === false) {
+    done({ icon: 'i-warn', warn: true, title: '連線中斷', body: '等待確認時藍牙斷線了，請重新連線後到狀態頁確認 DC 輸出。', button: '確定' });
+  } else if (r === null) {
+    done({ icon: 'i-warn', warn: true, title: '沒有收到確認', body: `${DC_WAIT_SEC} 秒內沒有收到裝置回應。如果你有按按鈕，請到狀態頁重新讀取確認。`, button: '確定' });
+  } else if (r[3] === 0x30) {
+    store.set('dc', { v, a });
+    done({ icon: 'i-check', title: '設定完成', body: `DC 輸出已設為 ${v.toFixed(1)} V（電流上限 ${a.toFixed(1)} A）。`, button: '完成' });
+  } else {
+    done({ icon: 'i-warn', warn: true, title: '設定失敗', body: '電壓值與轉接頭的規格不符，或操作順序錯誤。\n請確認接上的轉接頭後重新設定。', button: '確定' });
+  }
+}
+// 取消等待後才收到的 70：仍然告訴使用者結果
+function onStray(d) {
+  if (d[0] !== 0x70) return;
+  const req = dcRequest;
+  dcRequest = null;
+  if (d[3] === 0x30) {
+    if (req) store.set('dc', { v: req.v, a: req.a });
+    toast(`裝置回報 DC 設定成功${req ? `：${req.v.toFixed(1)} V` : ''}`);
+  } else toast('裝置回報 DC 設定失敗：電壓與轉接頭不符');
+}
 
 // ---------- 進階：指令選單 ----------
 const sx16 = v => v & 0x8000 ? v - 0x10000 : v;
@@ -1177,14 +1355,14 @@ $('#btnCopy').onclick = async () => {
 };
 
 // ---------- 啟動 ----------
-if (!navigator.bluetooth) {
+if (!navigator.bluetooth && !window.DhilosNative) {
   $('#noBle').hidden = false;
   $('#btnConnect').disabled = true;
   $('#btnConnect2').disabled = true;
 }
 render();
 if (new URLSearchParams(location.search).has('demo')) connect(true);
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+if (!window.DhilosNative && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 </script>

@@ -19,14 +19,24 @@ DhilosPower 行動電源的**非官方**藍牙控制工具。原廠已停止營�
 
 ## 使用方式
 
+### Android App（APK）
+
+下載 [`release/DhilosControl-debug.apk`](release/DhilosControl-debug.apk) 安裝即可（Android 8.0 以上，需允許「安裝不明來源的應用程式」）。
+App 內含同一份控制頁，不需要網路；因為 Android WebView 不支援 Web Bluetooth，藍牙改由原生程式處理。
+第一次連線會要求「附近的裝置」權限（Android 11 以下為定位權限，且需開啟定位）。
+
+> 目前是 debug 簽章的測試版，尚未在實機上完整驗證。
+
+### 網頁版
+
 需要支援 Web Bluetooth 的瀏覽器：**Android 的 Chrome**，或 Windows / macOS / Linux 的 **Chrome / Edge**。iPhone / iPad 的瀏覽器都不支援。
 
-### 線上版（GitHub Pages）
+#### 線上版（GitHub Pages）
 
 開啟本 repo 的 GitHub Pages 網址，按「連線」後選擇名稱含 `Dhilos` 的裝置即可。
 網址後加上 `?demo=1` 會直接進入示範模式。
 
-### 本機執行
+#### 本機執行
 
 Web Bluetooth 只能在 `https://` 或 `http://localhost` 下使用，所以需要一個本機伺服器（需安裝 [Go](https://go.dev/)）：
 
@@ -49,6 +59,16 @@ go run web/serve.go -dir web
 pip install bleak
 python ble_test.py
 ```
+
+### 自行建置 APK
+
+需要 JDK 17 與 Android SDK（`platforms;android-34`、`build-tools;34.0.0`），不需要 Gradle：
+
+```bash
+JAVA_HOME=/path/to/jdk17 ANDROID_SDK=/path/to/android-sdk bash android/build.sh
+```
+
+產出在 `android/build/DhilosPower-debug.apk`。第一次建置會在 `~/.android/dhilos-debug.keystore` 產生 debug 簽章金鑰，之後沿用同一把，才能直接覆蓋安裝。
 
 ## 支援機型
 
@@ -77,6 +97,13 @@ web/
   sw.js                 離線快取（網路優先）
   icon.svg              圖示
   serve.go              本機靜態伺服器
+android/
+  AndroidManifest.xml   App 設定與權限
+  src/…/MainActivity.java  WebView 外殼與原生藍牙橋接（window.DhilosNative）
+  res/                  圖示與字串
+  build.sh              不用 Gradle 的建置腳本
+release/
+  DhilosControl-debug.apk  建置好的測試版 APK
 ble_test.py             Python 讀取測試腳本
 BLE_Protocol.md         協議分析文件
 .github/workflows/pages.yml  自動部署 web/ 到 GitHub Pages
