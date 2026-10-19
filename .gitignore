@@ -6,11 +6,6 @@
 jadx-out/
 decompiled/
 
-# Python
-__pycache__/
-*.pyc
-.venv/
-
 # 編輯器 / 系統
 .vscode/
 .idea/

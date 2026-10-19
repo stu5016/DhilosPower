@@ -80,6 +80,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   background: var(--surface-2); border: 1px solid var(--border);
 }
 .icon-btn svg { width: 19px; height: 19px; }
+.icon-btn[aria-pressed="true"] { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
 
 main { max-width: 820px; margin: 0 auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
 
@@ -277,8 +278,6 @@ input[type=range]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 
 .toast { position: fixed; z-index: 50; left: 50%; bottom: calc(92px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-footer { text-align: center; color: var(--faint); font-size: 12px; margin-top: 22px; }
-footer a { color: inherit; }
 
 @media (min-width: 760px) {
   .tabs { position: sticky; top: 74px; bottom: auto; left: auto; transform: none; margin: 0 auto 16px; width: 420px; flex-direction: row; }
@@ -320,6 +319,7 @@ footer a { color: inherit; }
     <symbol id="i-tune" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4v16M12 4v16M18 4v16"/><circle cx="6" cy="9" r="2" fill="currentColor"/><circle cx="12" cy="15" r="2" fill="currentColor"/><circle cx="18" cy="8" r="2" fill="currentColor"/></g></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 12h12"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 12h12M12 6v12"/></symbol>
+    <symbol id="i-screen" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/><path d="M3 9v6M21 9v6"/></g></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-press" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="4" fill="currentColor"/></g></symbol>
     <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19Z"/><path d="M12 10v4M12 17h.01"/></g></symbol>
@@ -334,6 +334,7 @@ footer a { color: inherit; }
       <span><i id="dot" class="dot"></i><em id="devName" style="font-style:normal">未連線</em></span>
     </div>
   </div>
+  <button id="btnAwake" class="icon-btn" aria-label="螢幕保持常亮" aria-pressed="false" title="螢幕保持常亮"><svg><use href="#i-screen"/></svg></button>
   <button id="btnTheme" class="icon-btn" aria-label="切換深淺色"><svg><use href="#i-auto"/></svg></button>
   <button id="btnConnect" class="btn primary"><svg width="16" height="16"><use href="#i-bt"/></svg><span>連線</span></button>
 </header>
@@ -475,7 +476,6 @@ footer a { color: inherit; }
       </div>
     </section>
 
-    <footer>非官方工具，與原廠無關。協議由 App 反組譯分析而來，使用風險自負。</footer>
   </div>
 </main>
 
@@ -813,6 +813,7 @@ function parseFlags(d) {
 }
 
 const RING = 2 * Math.PI * 52;
+const LOAD_A = 0.05; // 電流達 50 mA 以上才算有接負載
 function render() {
   const soc = S.soc;
   $('#soc').textContent = soc == null ? '--' : soc;
@@ -821,8 +822,23 @@ function render() {
   $('#socText').textContent = soc == null ? '尚未讀取' : soc <= 33 ? '低電量' : soc <= 66 ? '中電量' : '高電量';
 
   const f = S.flags || {};
+  // 埠狀態位元只代表「輸出已開啟」（USB-A 平常就一直開著），要有電流才算真的在供電
+  const rows = [
+    ['USB-A', 'i-usba', S.ports.usb, f.usb, 'out'],
+    [is150() ? 'Type-C' : 'Type-C1', 'i-typec', S.ports.c1, f.c1in || f.c1out, f.c1in ? 'in' : 'out'],
+  ];
+  if (!is150()) rows.push(['Type-C2', 'i-typec', S.ports.c2, f.c2out, 'out']);
+  rows.push(['DC 輸出', 'i-dc', S.ports.dcOut, f.dc, 'out']);
+  if (is150()) rows.push(['DC 輸入', 'i-dc', S.ports.dcIn, false, 'in']);
+  const ports = rows.map(([name, icon, p, enabled, dir]) => {
+    const v = p ? Math.abs(p.v) : null, a = p ? Math.abs(p.a) : null;
+    const loaded = a != null && a >= LOAD_A;
+    const state = !enabled ? 'idle' : dir === 'in' ? 'in' : loaded ? 'out' : 'noload';
+    return { name, icon, v, a, w: v == null ? null : v * a, state };
+  });
+
   const charging = !!f.c1in;
-  const outputting = !!(f.usb || f.c1out || f.c2out || f.dc);
+  const outputting = ports.some(p => p.state === 'out');
   const st = $('#state');
   st.className = 'state' + (charging ? ' charging' : outputting ? ' out' : '');
   st.innerHTML = `<svg><use href="#i-bolt"/></svg>${charging ? '充電中' : outputting ? '供電中' : '待機'}`;
@@ -832,19 +848,12 @@ function render() {
   $('#pcb').textContent = S.pcb == null ? '--' : `${fmt(S.pcb)}°C`;
   $('#model').textContent = S.model == null ? '--' : `${modelName(S.model)} · v${S.fw}`;
 
-  const rows = [
-    ['USB-A', 'i-usba', S.ports.usb, f.usb, f.usb ? '輸出' : ''],
-    [is150() ? 'Type-C' : 'Type-C1', 'i-typec', S.ports.c1, f.c1in || f.c1out, f.c1in ? '輸入' : f.c1out ? '輸出' : ''],
-  ];
-  if (!is150()) rows.push(['Type-C2', 'i-typec', S.ports.c2, f.c2out, f.c2out ? '輸出' : '']);
-  rows.push(['DC 輸出', 'i-dc', S.ports.dcOut, f.dc, f.dc ? '輸出' : '']);
-  if (is150()) rows.push(['DC 輸入', 'i-dc', S.ports.dcIn, false, '']);
+  const TAG = { idle: '閒置', in: '輸入', out: '輸出', noload: '無負載' };
   let total = 0, any = false;
-  $('#ports').innerHTML = rows.map(([name, icon, p, on, tag]) => {
-    const v = p ? Math.abs(p.v) : null, a = p ? Math.abs(p.a) : null;
-    const w = v == null ? null : v * a;
-    if (w != null) { any = true; if (on && tag === '輸出') total += w; }
-    return `<div class="port${on ? ' on' : ''}"><div class="port-h"><svg><use href="#${icon}"/></svg><span>${name}</span><em class="badge">${tag || '閒置'}</em></div>` +
+  $('#ports').innerHTML = ports.map(({ name, icon, v, a, w, state }) => {
+    if (w != null) { any = true; if (state === 'out') total += w; }
+    const on = state === 'out' || state === 'in';
+    return `<div class="port${on ? ' on' : ''}"><div class="port-h"><svg><use href="#${icon}"/></svg><span>${name}</span><em class="badge">${TAG[state]}</em></div>` +
       `<div class="pw num">${w == null ? '--' : fmt(w, 1)}<small>W</small></div><div class="pva num">${fmt(v, 2)} V · ${fmt(a, 2)} A</div></div>`;
   }).join('');
   $('#total').textContent = `總輸出 ${any ? fmt(total, 1) : '--'} W`;
@@ -983,7 +992,40 @@ function setConnected(name) {
   $('#btnConnect').classList.toggle('primary', !name);
   $('#welcome').hidden = !!name;
   $('#app').hidden = !name;
+  applyKeepAwake();
 }
+
+// ---------- 螢幕常亮：App 內用原生旗標，瀏覽器用 Screen Wake Lock API ----------
+const nativeAwake = () => !!(window.DhilosNative && window.DhilosNative.setKeepScreenOn);
+let wakeLock = null;
+let keepAwake = store.get('keepAwake', false);
+async function applyKeepAwake() {
+  const want = !!dev && keepAwake;
+  if (nativeAwake()) { window.DhilosNative.setKeepScreenOn(want); return; }
+  if (!('wakeLock' in navigator)) return;
+  if (want && !wakeLock && document.visibilityState === 'visible') {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch { wakeLock = null; }
+  } else if (!want && wakeLock) {
+    const w = wakeLock; wakeLock = null;
+    w.release().catch(() => {});
+  }
+}
+const btnAwake = $('#btnAwake');
+btnAwake.setAttribute('aria-pressed', String(keepAwake));
+btnAwake.onclick = () => {
+  keepAwake = !keepAwake;
+  store.set('keepAwake', keepAwake);
+  btnAwake.setAttribute('aria-pressed', String(keepAwake));
+  applyKeepAwake();
+  toast(keepAwake ? '螢幕保持常亮：開（連線期間）' : '螢幕保持常亮：關');
+};
+// 切到背景時瀏覽器會自動釋放，回到前景再要一次
+document.addEventListener('visibilitychange', applyKeepAwake);
+if (!nativeAwake() && !('wakeLock' in navigator)) btnAwake.hidden = true;
+
 function onDisconnected() {
   const was = !!dev;
   if (dev) dev.abort();

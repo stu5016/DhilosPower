@@ -27,6 +27,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -50,7 +51,7 @@ import java.util.UUID;
 /**
  * WebView 外殼：網頁打包在 assets/www，以 https://appassets.dhilos/ 提供（安全來源，localStorage 可用）。
  * Android WebView 不支援 Web Bluetooth，所以由這裡用原生 BLE 連線，透過 window.DhilosNative 與網頁溝通：
- *   網頁 → 原生：DhilosNative.connect() / disconnect() / write(id, hex)
+ *   網頁 → 原生：DhilosNative.connect() / disconnect() / write(id, hex) / setKeepScreenOn(boolean)
  *   原生 → 網頁：window.dhilosNativeEvent(jsonString)，type 為 connected / cancelled / error / packet / writeDone / disconnected
  */
 @SuppressLint("MissingPermission")
@@ -178,6 +179,14 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void write(String id, String hex) { main.post(() -> enqueueWrite(id, hex)); }
+
+        @JavascriptInterface
+        public void setKeepScreenOn(boolean on) {
+            main.post(() -> {
+                if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
     }
 
     // ---------- 原生 → 網頁 ----------

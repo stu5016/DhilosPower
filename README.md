@@ -51,15 +51,6 @@ go run web/serve.go -dir web
 - USB 連接並開啟 USB 偵錯，執行 `adb reverse tcp:8080 tcp:8080`，手機開 `http://localhost:8080`
 - 或執行 `go run web/serve.go -dir web -host 0.0.0.0`，並在手機 Chrome 的 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` 加入電腦的區網網址
 
-### Python 測試腳本
-
-[`ble_test.py`](ble_test.py) 會連上裝置並送出一輪讀取指令（不會改任何設定），方便在電腦上驗證協議：
-
-```bash
-pip install bleak
-python ble_test.py
-```
-
 ### 自行建置 APK
 
 需要 JDK 17 與 Android SDK（`platforms;android-34`、`build-tools;34.0.0`），不需要 Gradle：
@@ -104,7 +95,6 @@ android/
   build.sh              不用 Gradle 的建置腳本
 release/
   DhilosControl-debug.apk  建置好的測試版 APK
-ble_test.py             Python 讀取測試腳本
 BLE_Protocol.md         協議分析文件
 .github/workflows/pages.yml  自動部署 web/ 到 GitHub Pages
 ```
