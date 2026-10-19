@@ -812,6 +812,25 @@ function parseFlags(d) {
   };
 }
 
+// 這支手機上次設定的充電上限（裝置不會回報，用別支手機改過就不準）
+function chargeLimit() {
+  const k = store.get('preset', null);
+  if (k && PRESETS[k]) return PRESETS[k].full;
+  if (k === 'custom') { const c = store.get('custom', null); if (c) return c.full; }
+  return null;
+}
+function chargeTime() {
+  const limit = chargeLimit(), soc = S.soc;
+  if (limit == null || limit >= 100 || soc == null) return { label: '充滿還需', text: minutes(S.ttf) };
+  const label = `充到 ${limit}% 還需`;
+  if (soc >= limit) return { label: `充電上限 ${limit}%`, text: '已達上限' };
+  // 優先用 滿充容量 × 差距 ÷ 平均充電電流；上限以下幾乎都是定電流充電，這樣算最接近
+  if (S.fcc && S.avgI > 50) return { label, text: minutes(Math.max(1, Math.round((limit - soc) / 100 * S.fcc / S.avgI * 60))) };
+  // 讀不到電流時，用電量計到 100% 的時間按比例縮短
+  if (S.ttf != null && S.ttf !== 65535 && soc < 100) return { label, text: minutes(Math.max(1, Math.round(S.ttf * (limit - soc) / (100 - soc)))) };
+  return { label, text: '—' };
+}
+
 const RING = 2 * Math.PI * 52;
 const LOAD_A = 0.05; // 電流達 50 mA 以上才算有接負載
 function render() {
@@ -842,8 +861,9 @@ function render() {
   const st = $('#state');
   st.className = 'state' + (charging ? ' charging' : outputting ? ' out' : '');
   st.innerHTML = `<svg><use href="#i-bolt"/></svg>${charging ? '充電中' : outputting ? '供電中' : '待機'}`;
-  $('#timeLabel').textContent = charging ? '充滿還需' : '可用時間';
-  $('#time').textContent = minutes(charging ? S.ttf : S.tte);
+  const ct = charging ? chargeTime() : null;
+  $('#timeLabel').textContent = charging ? ct.label : '可用時間';
+  $('#time').textContent = charging ? ct.text : minutes(S.tte);
   $('#btemp').textContent = S.btemp == null ? '--' : `${fmt(S.btemp)}°C`;
   $('#pcb').textContent = S.pcb == null ? '--' : `${fmt(S.pcb)}°C`;
   $('#model').textContent = S.model == null ? '--' : `${modelName(S.model)} · v${S.fw}`;
@@ -882,6 +902,12 @@ async function readStatus() {
     if ((d = await one(C.sbs(0x0D, '讀電量 %')))) S.soc = d[3];
     if ((d = await one(C.sbs(0x12, '讀可用時間')))) S.tte = le16(d, 3);
     if ((d = await one(C.sbs(0x13, '讀充滿時間')))) S.ttf = le16(d, 3);
+    // 電量計的充滿時間一律算到 100%；充電中另外讀容量與電流，自己算到充電上限的時間
+    S.fcc = S.avgI = null;
+    if (S.flags && S.flags.c1in) {
+      if ((d = await one(C.sbs(0x10, '讀滿充容量')))) S.fcc = le16(d, 3);
+      if ((d = await one(C.sbs(0x0B, '讀平均電流')))) S.avgI = sx16(le16(d, 3));
+    }
     const blk = await dev.send(C.mac(0x0072, '讀電池溫度'));
     const p0 = blk.find(p => u16(p, 11) === 0);
     if (p0) S.btemp = u16(p0, 5) * 0.1 - 273.15;
@@ -1084,7 +1110,7 @@ $$('.preset').forEach(b => b.onclick = async () => {
   const k = b.dataset.preset;
   if (k === 'custom') { showPreset('custom'); return; }
   const p = PRESETS[k];
-  if (await sendWrite(C.charge(p.full, p.low, p.mode, p.amp), `已套用「${p.name}」充電設定`)) { store.set('preset', k); showPreset(k); }
+  if (await sendWrite(C.charge(p.full, p.low, p.mode, p.amp), `已套用「${p.name}」充電設定`)) { store.set('preset', k); showPreset(k); render(); }
 });
 
 function paintRange(el) { el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min) * 100) + '%'); }
@@ -1111,7 +1137,7 @@ bind('dcv', v => v.toFixed(1) + ' V');
 $('#btnCustom').onclick = async () => {
   const c = { full: +$('#full').value, amp: +(+$('#amp').value).toFixed(1) };
   // F4 的 byte4（App 標為「低電量通知」）固定送 10%，與原 App 自訂模式的預設值相同；mode 欄位原 App 自訂時固定為 0
-  if (await sendWrite(C.charge(c.full, 10, 0, c.amp), '已套用自訂充電設定')) { store.set('custom', c); store.set('preset', 'custom'); }
+  if (await sendWrite(C.charge(c.full, 10, 0, c.amp), '已套用自訂充電設定')) { store.set('custom', c); store.set('preset', 'custom'); render(); }
 };
 
 $$('[data-step]').forEach(b => b.onclick = () => {
